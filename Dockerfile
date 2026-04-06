@@ -1,7 +1,6 @@
-# استخدام نسخة Node.js الرسمية
 FROM node:22-bullseye
 
-# تثبيت الأدوات اللازمة لبناء المكتبات (Python و C++)
+# تثبيت الأدوات اللازمة للبناء
 RUN apt-get update && apt-get install -y \
     python3 \
     make \
@@ -9,20 +8,18 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# تعيين مجلد العمل
 WORKDIR /app
 
-# نسخ ملفات الإعدادات أولاً
+# نسخ ملفات التعريف أولاً
 COPY package*.json ./
 
-# تثبيت المكتبات مع السماح بالبناء
-RUN npm install
+# حذف أي بقايا قديمة وتثبيت نظيف للمكتبات
+RUN rm -rf node_modules && npm install
 
-# نسخ باقي ملفات المشروع
+# نسخ باقي الملفات
 COPY . .
 
-# فتح المنفذ
 EXPOSE 3000
 
-# أمر التشغيل
+# التأكد من تشغيل الملف بالحروف الصغيرة
 CMD ["node", "main.js"]
