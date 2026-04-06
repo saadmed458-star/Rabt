@@ -1,0 +1,64 @@
+// plugins/تقييم.js
+
+export const NovaUltra = {
+    command: "تقييم",
+    description: "تقييم الشخص الممنشن",
+    elite: "off",
+    group: true,
+    prv: false,
+    lock: "off"
+};
+
+async function execute({ sock, msg }) {
+    const chatId = msg.key.remoteJid;
+
+    // التأكد أن الأمر في مجموعة
+    if (!chatId.endsWith('@g.us')) {
+        return await sock.sendMessage(chatId, { 
+            text: '*╻🚫╹↵ هذا الأمر يعمل فقط في المجموعات!*' 
+        }, { quoted: msg });
+    }
+
+    // الحصول على الشخص الممنشن
+    const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+
+    if (mentionedJids.length === 0) {
+        return await sock.sendMessage(chatId, { 
+            text: '*╻❌╹↵ استخدم الأمر مع منشن لشخص! مثال : .تقييم @منشن*' 
+        }, { quoted: msg });
+    }
+
+    const target = mentionedJids[0];
+    const targetName = `@${target.split('@')[0]}`;
+
+    const types = [
+        "الجمال 💅",
+        "الذكاء 🧠",
+        "الشر 😈",
+        "البراءة 😇",
+        "الهيبة 😎",
+        "الجنون 🤪",
+        "الدراما 🎭",
+        "الطيبة ❤️",
+        "الكسل 😴",
+        "حب الناس 😍",
+        "الشطارة 📚",
+        "الفهاوة 😵",
+        "الرزانة 🧘",
+        "العظمة 👑",
+        "الرومانسية 💘",
+        "العناد 😤"
+    ];
+
+    const randomType = types[Math.floor(Math.random() * types.length)];
+    const randomPercentage = Math.floor(Math.random() * 101);
+
+    const result = `*╻🍷╹ كرولــــو يـقـيـيـم ↵ ${targetName}. فـي*\n\n*. . .${randomType}. .*\n\n*بـنـسـبـة : ${randomPercentage}%. . .*\n\n╻🐧💐╹ الـتـقـيـيـم مـضـمـوون جـدا ╻🗿╹↵*`;
+
+    await sock.sendMessage(chatId, {
+        text: result,
+        mentions: [target]
+    }, { quoted: msg });
+}
+
+export default { NovaUltra, execute };

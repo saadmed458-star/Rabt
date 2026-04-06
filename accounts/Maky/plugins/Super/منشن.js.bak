@@ -1,0 +1,160 @@
+// منشن.js - ضعه في: plugins/elite/
+import { jidDecode } from "@whiskeysockets/baileys";
+import config from '../../nova/config.js';
+
+const NovaUltra = {
+    command: [ "الكل" ],
+    description: "منشن جميع أعضاء المجموعة (للمشرفين فقط)",
+    elite: "off",
+    group: true,
+    prv: false,
+    lock: "off",
+    admin: true
+};
+
+function decode(jid) {
+    return (jidDecode(jid)?.user || jid.split("@")[0]) + "@s.whatsapp.net";
+}
+
+// دالة التحقق من المشرف
+async function isGroupAdmin(sock, chatId, userId) {
+    try {
+        const groupMetadata = await sock.groupMetadata(chatId);
+        const participant = groupMetadata.participants.find(p => p.id === userId);
+        return participant?.admin === 'admin' || participant?.admin === 'superadmin';
+    } catch {
+        return false;
+    }
+}
+
+// دالة الريأكت
+async function sendReaction(sock, chatId, messageId, emoji) {
+    try {
+        await sock.sendMessage(chatId, {
+            react: {
+                text: emoji,
+                key: {
+                    remoteJid: chatId,
+                    fromMe: true,
+                    id: messageId
+                }
+            }
+        });
+    } catch (e) {}
+}
+
+async function execute({ sock, msg, args }) {
+    const chatId = msg.key.remoteJid;
+    const messageId = msg.key.id;
+    const sender = decode(msg.key.participant || chatId);
+    
+    try {
+        // التحقق من أن المرسل مشرف
+        const isAdmin = await isGroupAdmin(sock, chatId, sender);
+        
+        if (!isAdmin && !msg.key.fromMe) {
+            await sendReaction(sock, chatId, messageId, "⚠️");
+            await sock.sendMessage(chatId, {
+                text: "❌ *هذا الأمر متاح فقط للمشرفين.*\n"
+            }, { quoted: msg });
+            return;
+        }
+        
+        await sendReaction(sock, chatId, messageId, "⏳");
+        
+        const groupMetadata = await sock.groupMetadata(chatId);
+        const participants = groupMetadata.participants;
+        const groupOwner = groupMetadata.owner;
+        
+        await sendReaction(sock, chatId, messageId, "⚙️");
+        
+        // تصنيف الأعضاء
+        const owner = [];
+        const admins = [];
+        const members = [];
+        const ownerNumber = config.owner?.toString().replace(/\D/g, '') + "@s.whatsapp.net";
+        
+        for (const participant of participants) {
+            const isOwner = participant.id === groupOwner || participant.id === ownerNumber;
+            const isAdmin = participant.admin === 'admin' || participant.admin === 'superadmin';
+            
+            if (isOwner) owner.push(participant.id);
+            else if (isAdmin) admins.push(participant.id);
+            else members.push(participant.id);
+        }
+        
+        const extraMsg = args.length > 0 ? args.join(" ") : "";
+        const mentions = participants.map(p => p.id);
+        
+        await sendReaction(sock, chatId, messageId, "📤");
+        
+        // بناء الرسالة
+        let tagMessage = "╭───✦ *〘 تـــنـــبـــيـــه 〙* ✦───╮\n\n";
+        tagMessage += "✧━━━━━ ❀ *مـــنـــشـــن الـــكـــل* ❀ ━━━━━✧\n\n";
+        
+        if (extraMsg) {
+            tagMessage += "📌 *الرسالة:*\n“ " + extraMsg + " ”\n\n━━━━━━━━━━━━━━\n\n";
+        }
+        
+        tagMessage += "📊 *الإحصائيات:*\n";
+        tagMessage += "👑 المالك: " + owner.length + "\n";
+        tagMessage += "🛡 المشرفين: " + admins.length + "\n";
+        tagMessage += "👥 الأعضاء: " + members.length + "\n";
+        tagMessage += "📋 الإجمالي: " + participants.length + "\n\n";
+        tagMessage += "━━━━━━━━━━━━━━\n\n";
+        
+        // عرض المالك
+        if (owner.length > 0) {
+            tagMessage += "👑 *【 المــالــك 】*\n";
+            tagMessage += "✧━━━━━━❀━━━━━━✧\n";
+            owner.forEach(id => {
+                tagMessage += "┣ @" + id.split('@')[0] + "\n";
+            });
+            tagMessage += "✧━━━━━━❀━━━━━━✧\n\n";
+        }
+        
+        // عرض المشرفين
+        if (admins.length > 0) {
+            tagMessage += "🛡 *【 الــمــشــرفــيــن 】*\n";
+            tagMessage += "✧━━━━━━❀━━━━━━✧\n";
+            admins.forEach(id => {
+                tagMessage += "┣ @" + id.split('@')[0] + "\n";
+            });
+            tagMessage += "✧━━━━━━❀━━━━━━✧\n\n";
+        }
+        
+        // عرض الأعضاء
+        if (members.length > 0) {
+            tagMessage += "👥 【 الأعــضــاء 】\n";
+            tagMessage += "✧━━━━━━❀━━━━━━✧\n";
+            
+            const chunkSize = 30;
+            for (let i = 0; i < members.length; i += chunkSize) {
+                const chunk = members.slice(i, i + chunkSize);
+                chunk.forEach(id => {
+                    tagMessage += "┣ @" + id.split('@')[0] + "\n";
+                });
+            }
+            tagMessage += "✧━━━━━━❀━━━━━━✧\n\n";
+        }
+        
+        tagMessage += "╰───✦ *〘 𝐀𝐧𝐚𝐬𝐭𝐚𝐬𝐢𝐚 〙* ✦───╯\n";
+        tagMessage += "🔔 *تم التنبيه بواسطة:* @" + sender.split('@')[0];
+        
+        await sock.sendMessage(chatId, {
+            text: tagMessage,
+            mentions: mentions
+        }, { quoted: msg });
+        
+        await sendReaction(sock, chatId, messageId, "✅");
+        
+    } catch (error) {
+        console.error("❌ خطأ:", error);
+        await sendReaction(sock, chatId, messageId, "❌");
+        await sock.sendMessage(chatId, { 
+            text: "❌ *حدث خطأ أثناء محاولة منشن الأعضاء.*" 
+        }, { quoted: msg });
+    }
+}
+
+export default { NovaUltra, execute };

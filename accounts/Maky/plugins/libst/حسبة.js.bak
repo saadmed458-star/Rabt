@@ -1,0 +1,201 @@
+// ملف: plugins/المجموعة/حسبة.js
+
+// تخزين نقاط التفاعل لكل عضو
+const userPoints = new Map();
+
+export const NovaUltra = {
+    command: ["حسبة", "نقاط", "تفاعل", "stats"],
+    description: "يعرض نقاط تفاعل الأعضاء في المجموعة",
+    elite: "off",
+    group: true,
+    prv: false,
+    lock: "off",
+    admin: false
+};
+
+// نقاط التفاعل لكل نوع رسالة
+const POINTS = {
+    text: 1,
+    image: 2,
+    video: 3,
+    audio: 2,
+    sticker: 1,
+    reply: 2,
+    delete: -1
+};
+
+// دالة لتسجيل التفاعل
+export async function trackInteraction(sock, msg) {
+    try {
+        const chatId = msg.key.remoteJid;
+        const sender = msg.key.participant || msg.key.remoteJid;
+        const timestamp = Date.now();
+        
+        // تجاهل رسائل البوت نفسه والرسائل الخاصة
+        if (msg.key.fromMe || !chatId?.includes("@g.us")) return;
+        
+        // تحديد نوع الرسالة ونقاطها
+        let points = POINTS.text;
+        
+        if (msg.message?.imageMessage) {
+            points = POINTS.image;
+        } else if (msg.message?.videoMessage) {
+            points = POINTS.video;
+        } else if (msg.message?.audioMessage) {
+            points = POINTS.audio;
+        } else if (msg.message?.stickerMessage) {
+            points = POINTS.sticker;
+        }
+        
+        // التحقق إذا كان رد على رسالة
+        if (msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
+            points += POINTS.reply;
+        }
+        
+        // تخزين التفاعل
+        const key = `${chatId}_${sender}`;
+        if (!userPoints.has(key)) {
+            userPoints.set(key, []);
+        }
+        
+        const interactions = userPoints.get(key);
+        interactions.push({ timestamp, points });
+        
+        // تنظيف التفاعلات القديمة (أقدم من 7 أيام)
+        const sevenDays = 7 * 24 * 60 * 60 * 1000;
+        const filtered = interactions.filter(i => timestamp - i.timestamp < sevenDays);
+        userPoints.set(key, filtered);
+        
+    } catch (error) {
+        console.error("❌ خطأ في تسجيل التفاعل:", error);
+    }
+}
+
+// دالة لجلب نقاط العضو خلال فترة زمنية
+function getUserPointsInPeriod(interactions, hours) {
+    const now = Date.now();
+    const periodMs = hours * 60 * 60 * 1000;
+    
+    const filtered = interactions.filter(i => now - i.timestamp < periodMs);
+    const totalPoints = filtered.reduce((sum, i) => sum + i.points, 0);
+    
+    return {
+        points: totalPoints,
+        messagesCount: filtered.length
+    };
+}
+
+export async function execute({ sock, msg, args }) {
+    const chatId = msg.key.remoteJid;
+    const sender = msg.key.participant || msg.key.remoteJid;
+    
+    try {
+        // التحقق من المجموعة
+        const chat = await sock.groupMetadata(chatId).catch(() => null);
+        if (!chat) {
+            return sock.sendMessage(chatId, { 
+                text: "❌ هذا الأمر فقط للمجموعات" 
+            }, { quoted: msg });
+        }
+        
+        await sock.sendMessage(chatId, {
+            react: { text: "📊", key: msg.key }
+        });
+        
+        // تحديد الفترة الزمنية
+        let hours = 24;
+        if (args[0] && !isNaN(args[0])) {
+            hours = parseInt(args[0]);
+            if (hours > 168) hours = 168;
+            if (hours < 1) hours = 1;
+        }
+        
+        const participants = chat.participants;
+        const pointsList = [];
+        
+        // حساب نقاط كل عضو
+        for (const participant of participants) {
+            const jid = participant.id;
+            const key = `${chatId}_${jid}`;
+            const interactions = userPoints.get(key) || [];
+            const { points, messagesCount } = getUserPointsInPeriod(interactions, hours);
+            
+            if (points > 0 || messagesCount > 0) {
+                const name = participant.notifyName || jid.split('@')[0];
+                pointsList.push({
+                    jid: jid,
+                    name: name,
+                    points: points,
+                    messages: messagesCount
+                });
+            }
+        }
+        
+        // ترتيب حسب النقاط
+        pointsList.sort((a, b) => b.points - a.points);
+        
+        // بناء الرسالة
+        const periodText = hours === 24 ? "آخر 24 ساعة" : hours === 168 ? "آخر 7 أيام" : `آخر ${hours} ساعة`;
+        
+        let messageText = `*📊 حسبة التفاعل في المجموعة*\n`;
+        messageText += `*📅 الفترة:* ${periodText}\n`;
+        messageText += `*👥 المشاركون:* ${pointsList.length} من ${participants.length}\n\n`;
+        
+        if (pointsList.length === 0) {
+            messageText += `⚠️ لا يوجد تفاعل في هذه الفترة\n\n`;
+        } else {
+            messageText += `*🏆 ترتيب التفاعل:*\n\n`;
+            
+            for (let i = 0; i < Math.min(pointsList.length, 15); i++) {
+                const member = pointsList[i];
+                let medal = "";
+                if (i === 0) medal = "🥇 ";
+                else if (i === 1) medal = "🥈 ";
+                else if (i === 2) medal = "🥉 ";
+                else medal = `${i+1}. `;
+                
+                messageText += `${medal} @${member.jid.split('@')[0]}\n`;
+                messageText += `   └ ⭐ ${member.points} نقطة | 💬 ${member.messages} رسالة\n\n`;
+            }
+        }
+        
+        // نقاط المستخدم نفسه
+        const userKey = `${chatId}_${sender}`;
+        const userInteractions = userPoints.get(userKey) || [];
+        const userStats = getUserPointsInPeriod(userInteractions, hours);
+        
+        const senderName = chat.participants.find(p => p.id === sender)?.notifyName || sender.split('@')[0];
+        
+        messageText += `*👤 نقاطك الشخصية:*\n`;
+        messageText += `└ @${sender.split('@')[0]} → ⭐ ${userStats.points} نقطة | 💬 ${userStats.messagesCount} رسالة\n\n`;
+        
+        messageText += `*❖══════ •『 📊 』• ══════❖*\n`;
+        messageText += `> .حسبة 24 = آخر 24 ساعة\n`;
+        messageText += `> .حسبة 3 = آخر 3 ساعات\n`;
+        messageText += `> .حسبة 168 = آخر 7 أيام\n`;
+        messageText += `> ⏤͟͟͞͞ 𝐊𝐑𝐎𝐋𝐋𝐎 - 𝑩𝛩𝑻 🕸⃝⃕`;
+        
+        // استخراج المنشن
+        const mentions = pointsList.slice(0, 15).map(m => m.jid);
+        mentions.push(sender);
+        
+        await sock.sendMessage(chatId, {
+            text: messageText,
+            mentions: mentions
+        }, { quoted: msg });
+        
+        await sock.sendMessage(chatId, {
+            react: { text: "✅", key: msg.key }
+        });
+        
+        console.log(`✅ تم عرض حسبة التفاعل في ${chatId} لآخر ${hours} ساعة`);
+        
+    } catch (err) {
+        console.error("❌ خطأ:", err);
+        await sock.sendMessage(chatId, { 
+            text: "❌ حدث خطأ في حساب نقاط التفاعل"
+        }, { quoted: msg });
+    }
+}
+
+export default { NovaUltra, execute, trackInteraction };

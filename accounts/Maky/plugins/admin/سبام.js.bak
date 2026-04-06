@@ -1,0 +1,90 @@
+const NovaUltra = {
+command: ["سبام"],
+description: "حماية الجروب من السبام",
+elite: "off",
+group: true,
+admin: true,
+lock: "off"
+};
+
+const spamProtection = new Map();
+const spamMessages = new Map();
+
+async function execute({ sock, msg, args }) {
+
+const chatId = msg.key.remoteJid;
+
+if(args[0] === "تشغيل"){
+
+spamProtection.set(chatId,true);
+
+await sock.sendMessage(chatId,{
+text:"🛡 تم تشغيل حماية السبام."
+},{quoted:msg});
+
+}
+
+else if(args[0] === "ايقاف"){
+
+spamProtection.delete(chatId);
+
+await sock.sendMessage(chatId,{
+text:"⛔ تم إيقاف حماية السبام."
+},{quoted:msg});
+
+}
+
+}
+
+export async function autoRespond(sock,msg){
+
+const chatId = msg.key.remoteJid;
+const sender = msg.key.participant || msg.key.remoteJid;
+
+if(!spamProtection.has(chatId)) return;
+
+const key = chatId + sender;
+
+if(!spamMessages.has(key)){
+spamMessages.set(key,[]);
+}
+
+const arr = spamMessages.get(key);
+
+arr.push({
+time:Date.now(),
+id:msg.key.id
+});
+
+// حذف الرسائل القديمة
+const now = Date.now();
+const recent = arr.filter(m => now - m.time < 5000);
+spamMessages.set(key,recent);
+
+// إذا أكثر من 5 رسائل خلال 5 ثواني
+if(recent.length >= 5){
+
+for(const m of recent){
+
+await sock.sendMessage(chatId,{
+delete:{
+remoteJid:chatId,
+id:m.id,
+participant:sender
+}
+});
+
+}
+
+await sock.sendMessage(chatId,{
+text:`🚫 تم حذف رسائل سبام من @${sender.split("@")[0]}`,
+mentions:[sender]
+});
+
+spamMessages.set(key,[]);
+
+}
+
+}
+
+export default {NovaUltra,execute,autoRespond};

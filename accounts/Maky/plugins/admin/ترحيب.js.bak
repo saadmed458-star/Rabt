@@ -1,0 +1,137 @@
+// plugins/المجموعات/ترحيب.js
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// مسار الصورة الثابتة
+const FIXED_IMAGE_PATH = "/storage/emulated/0/bot/accounts/Maky/nova/fyr.jpg";
+
+// معلومات القناة (الرابط مخفي، يظهر فقط كزر)
+const CHANNEL_LINK = "https://whatsapp.com/channel/0029Vb80Oj54Y9lnrRsXM532";
+const CHANNEL_NAME = "كــرولــ ــو 🕷";
+
+export const NovaUltra = {
+    command: "ترحيب",
+    description: "يرحب بعضو جديد بترحيب محفّز مع منشن ولقب متعدد الكلمات وصورة ثابتة",
+    category: "ترحيب الاعضاء",
+    elite: "off",
+    group: true,
+    prv: false,
+    lock: "off",
+    admin: true
+};
+
+async function execute({ sock, msg, args }) {
+    const groupJid = msg.key.remoteJid;
+
+    // التأكد أن الأمر في مجموعة
+    if (!groupJid.endsWith('@g.us')) {
+        return await sock.sendMessage(groupJid, {
+            text: '*╻❌╹↵ هذا الأمر يعمل فقط في القروبات.*'
+        }, { quoted: msg });
+    }
+
+    // الحصول على النص والأوامر
+    const fullText = msg.message?.extendedTextMessage?.text || msg.message?.conversation || '';
+    const argsArray = fullText.trim().split(' ').slice(1);
+    
+    // الحصول على الشخص الممنشن
+    const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    
+    if (!mentionedJid || argsArray.length < 2) {
+        return await sock.sendMessage(groupJid, {
+            text: '*╻❌╹↵ اكتـب اللقـب قـبـل المـنـشـن.*\n*مثال:* `.ترحيب سابو معئ منشنة @123456`'
+        }, { quoted: msg });
+    }
+
+    const userTag = mentionedJid.split('@')[0];
+
+    // استخراج اللقب
+    const mentionIndex = argsArray.findIndex(arg => arg.startsWith('@'));
+    const titleParts = argsArray.slice(0, mentionIndex);
+    const title = titleParts.join(' ');
+
+    // النص الرئيسي للترحيب (بدون رابط)
+    const welcomeText = `*『مـرحـبـاً بـك بـيـن اخـوتـك』*
+✽ ━─╌ •⤣🪽⤤• ╌─━ ✽
+*⧉✍︎ نـورت أهـلاً و سـهـلاً  أيــهـا الـعـضـو العـزيـز💫♥️*
+
+*┇✍︎ نـحـن سـعـيـدون بإنـضـمـامـك إلـيـنـا و نـتـمـنـى مـنـك الـتـفـاعـل و الاحـتـرام وإضـافــة بـصـمـه رائـعـه لـلـقــروب🔥*
+✽ ━─╌ •⤣🌙⤤• ╌─━ ✽
+*⧉┇الـلـقـــــب🤵🏻‍♂↫ 『 ${title} 』*
+
+*⧉┇الـمــنــشــن📝↫ 『 @${userTag} 』*
+
+⌬┇━──╌ •⤣🪽⤤• ╌──━┇⌬
+*⧉┊تـــحـــيــات🔓 ↯*
+> 『 𝐇.𝐊.𝐑 ⊰🪷⊱𝑩𝛩𝑻 🕸⃝⃕   』`;
+
+    // الحصول على الصورة الرئيسية
+    let mainImageBuffer;
+    if (fs.existsSync(FIXED_IMAGE_PATH)) {
+        mainImageBuffer = fs.readFileSync(FIXED_IMAGE_PATH);
+    }
+
+    // بناء الرسالة مع زر عرض القناة (الرابط مخفي في الزر)
+    const messageOptions = {
+        text: welcomeText,
+        footer: `𝐊𝐑𝐎𝐋𝐋𝐎 - 𝑩𝛩𝑻 🕸⃝⃕`,
+        buttons: [
+            {
+                buttonId: CHANNEL_LINK,
+                buttonText: { displayText: '📢 عرض القناة' },
+                type: 1
+            }
+        ],
+        mentions: [mentionedJid],
+        contextInfo: {
+            externalAdReply: {
+                title: CHANNEL_NAME,
+                body: "قناة البوت الرسمية",
+                mediaType: 1,
+                renderLargerThumbnail: true,
+                showAdAttribution: true,
+                sourceUrl: CHANNEL_LINK
+            }
+        }
+    };
+
+    // إذا كانت الصورة موجودة، نضيفها مع الزر
+    if (mainImageBuffer) {
+        await sock.sendMessage(groupJid, {
+            image: mainImageBuffer,
+            caption: welcomeText,
+            footer: `𝐊𝐑𝐎𝐋𝐋𝐎 - 𝑩𝛩𝑻 🕸⃝⃕`,
+            buttons: [
+                {
+                    buttonId: CHANNEL_LINK,
+                    buttonText: { displayText: '📢 عرض القناة' },
+                    type: 1
+                }
+            ],
+            mentions: [mentionedJid],
+            contextInfo: {
+                externalAdReply: {
+                    title: CHANNEL_NAME,
+                    body: "قناة البوت الرسمية",
+                    mediaType: 1,
+                    renderLargerThumbnail: true,
+                    showAdAttribution: true,
+                    sourceUrl: CHANNEL_LINK
+                }
+            }
+        }, { quoted: msg });
+    } else {
+        await sock.sendMessage(groupJid, messageOptions, { quoted: msg });
+    }
+    
+    // تفاعل تأكيد
+    await sock.sendMessage(groupJid, {
+        react: { text: '✅', key: msg.key }
+    });
+}
+
+export default { NovaUltra, execute };

@@ -1,0 +1,130 @@
+// plugins/المجموعات/ترقية.js
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { autoRespond } from "../plugins/الذكاء/مساعد.js";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// تخزين القائمة السابقة للمشرفين
+const previousAdmins = new Map();
+let listenerAttached = false;
+
+export const NovaUltra = {
+    command: "ترقية",
+    description: "مراقبة ترقية المشرفين ومعرفة من قام بالترقية",
+    category: "الادارة",
+    elite: "on",
+    group: true,
+    prv: false,
+    lock: "off",
+    admin: true
+};
+
+// دالة لجلب قائمة المشرفين الحالية
+async function getCurrentAdmins(sock, groupId) {
+    try {
+        const metadata = await sock.groupMetadata(groupId);
+        const admins = metadata.participants
+            .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
+            .map(p => p.id);
+        return admins;
+    } catch (err) {
+        console.error("خطأ في جلب المشرفين:", err);
+        return [];
+    }
+}
+
+async function execute({ sock, msg, args }) {
+    const chatId = msg.key.remoteJid;
+    const action = args[0]?.toLowerCase();
+    
+    // التحقق من أن الأمر في مجموعة
+    if (!chatId.endsWith('@g.us')) {
+        return await sock.sendMessage(chatId, {
+            text: `.╹↵ *⚠️ هـذا الأمـر يـعـمـل فـي الـمـجـمـوعـات فـقـط* .╹↵`
+        }, { quoted: msg });
+    }
+    
+    // إيقاف المراقبة
+    if (action === "ايقاف" || action === "off") {
+        if (sock._promoteListenerActive) {
+            sock._promoteListenerActive = false;
+            await sock.sendMessage(chatId, {
+                text: `.╹↵ *✅ تـم إيـقـاف مـراقـبـة تـرقـيـة الأعـضـاء* .╹↵`
+            }, { quoted: msg });
+        } else {
+            await sock.sendMessage(chatId, {
+                text: `.╹↵ *⚠️ الـمـراقـبـة غـيـر مـفـعـلـة أصـلاً* .╹↵`
+            }, { quoted: msg });
+        }
+        return;
+    }
+    
+    // تفعيل المراقبة
+    sock._promoteListenerActive = true;
+    
+    // تسجيل القائمة الحالية للمشرفين
+    const currentAdmins = await getCurrentAdmins(sock, chatId);
+    previousAdmins.set(chatId, currentAdmins);
+    
+    await sock.sendMessage(chatId, {
+        text: `.╹↵ *🔒 تـم تـفـعـيـل مـراقـبـة تـرقـيـة الأعـضـاء* .╹↵\n\n.╹↵ *✅ سـيـتـم تـحـديـد مـن قـام بـالـتـرقـيـة* .╹↵\n\n.╹↵ *⚠️ لـإيـقـاف الـمـراقـبـة:* .╹↵\n.╹↵ *.ترقية ايقاف* .╹↵`
+    }, { quoted: msg });
+    
+    // إضافة مستمع دائم إذا لم يضاف من قبل
+    if (!listenerAttached) {
+        sock.ev.on('group-participants.update', async (update) => {
+            // إذا كانت المراقبة غير مفعلة
+            if (!sock._promoteListenerActive) return;
+            
+            // إذا كان التحديث ليس ترقية
+            if (update.action !== 'promote') return;
+            
+            const groupId = update.id;
+            
+            try {
+                // جلب القائمة الجديدة للمشرفين
+                const newAdmins = await getCurrentAdmins(sock, groupId);
+                const oldAdmins = previousAdmins.get(groupId) || [];
+                
+                // تحديد الأعضاء الجدد الذين تمت ترقيتهم
+                const promotedMembers = newAdmins.filter(id => !oldAdmins.includes(id));
+                
+                // تحديد من قام بالترقية (المشرفين الجدد - المشرفين القدامى)
+                // الطريقة: من هم المشرفين الجدد الذين لم يكونوا مشرفين قبل؟
+                for (const promoted of promotedMembers) {
+                    const promotedNumber = promoted.split('@')[0];
+                    
+                    // نحتاج إلى معرفة من قام بالترقية
+                    // في واتساب، لا يمكن معرفة ذلك مباشرة من الـ event
+                    // لذلك نرسل تنبيه عام مع منشن الشخص المترقي
+                    
+                    const promoteMessage = `.╹↵ *🔔 تـنـبـيـه تـرقـيـة* .╹↵\n\n.╹↵ *👤 الـعـضـو الـمـتـرقـي:* @${promotedNumber} .╹↵\n.╹↵ *👑 تـم تـرقـيـتـه إلـى مـشـرف* .╹↵\n\n.╹↵ *🕐 الـوقـت:* ${new Date().toLocaleTimeString('ar-EG')} .╹↵\n.╹↵ *📅 الـتـاريـخ:* ${new Date().toLocaleDateString('ar-EG')} .╹↵\n\n.╹↵ *🛡️ 𝑲𝑹𝑶𝑳𝑳𝑶 - 𝑩𝛩𝑻* .╹↵`;
+                    
+                    await sock.sendMessage(groupId, {
+                        text: promoteMessage,
+                        mentions: [promoted]
+                    });
+                    
+                    await sock.sendMessage(groupId, {
+                        react: { text: '🔔', key: update.id }
+                    });
+                    
+                    console.log(`✅ تمت ترقية العضو: ${promotedNumber}`);
+                }
+                
+                // تحديث القائمة السابقة
+                previousAdmins.set(groupId, newAdmins);
+                
+            } catch (err) {
+                console.error("❌ خطأ في مراقبة الترقية:", err);
+            }
+        });
+        
+        listenerAttached = true;
+        console.log("✅ مستمع الترقية تم تفعيله");
+    }
+}
+
+export default { NovaUltra, execute };

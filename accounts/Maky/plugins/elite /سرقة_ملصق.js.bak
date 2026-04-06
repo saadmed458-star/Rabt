@@ -1,0 +1,104 @@
+// plugins/حقوق-ملصق.js
+import { downloadContentFromMessage } from '@whiskeysockets/baileys';
+import crypto from 'crypto';
+import webp from 'node-webpmux';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// الحقوق
+const PACK = `حـقـوق كرولو;
+
+const AUTHOR = `⏱
+╮┄┄┄┄┄┄┄┄┄┄┄┄╭
+    كــــرولــــو.⃝🕷 
+╯┄┄┄┄┄┄┄┄┄┄┄┄╰`;
+
+function generateStickerID() {
+    return crypto.randomBytes(16).toString('hex');
+}
+
+function buildExif(pack, auth) {
+    const json = {
+        "sticker-pack-id": generateStickerID(),
+        "sticker-pack-name": pack,
+        "sticker-pack-publisher": auth
+    };
+    const exifAttr = Buffer.from(JSON.stringify(json), 'utf8');
+
+    const exif = Buffer.concat([
+        Buffer.from([
+            0x49, 0x49, 0x2A, 0x00,
+            0x08, 0x00, 0x00, 0x00,
+            0x01, 0x00, 0x41, 0x57,
+            0x07, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x16, 0x00,
+            0x00, 0x00
+        ]),
+        exifAttr
+    ]);
+
+    exif.writeUIntLE(exifAttr.length, 14, 4);
+    return exif;
+}
+
+async function addExifToSticker(stickerBuffer, pack, author) {
+    const img = new webp.Image();
+    await img.load(stickerBuffer);
+    img.exif = buildExif(pack, author);
+    return await img.save(null);
+}
+
+export const NovaUltra = {
+    command: "حقوق",
+    description: "سرقة ملصق وتغيير الحقوق",
+    category: "sticker",
+    elite: "off",
+    group: true,
+    prv: true,
+    lock: "off"
+};
+
+async function execute({ sock, msg }) {
+    try {
+        const jid = msg.key.remoteJid;
+        const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+
+        if (!quoted || !quoted.stickerMessage) {
+            return await sock.sendMessage(jid, { 
+                text: "*╻❌╹↵ ارسل الأمر على ملصق!*" 
+            }, { quoted: msg });
+        }
+
+        // تحميل الملصق الأصلي
+        const buffer = await downloadContentFromMessage(
+            quoted.stickerMessage,
+            'sticker'
+        );
+
+        let stickerBuffer = Buffer.from([]);
+
+        for await (const chunk of buffer) {
+            stickerBuffer = Buffer.concat([stickerBuffer, chunk]);
+        }
+
+        // إضافة الحقوق
+        const finalSticker = await addExifToSticker(stickerBuffer, PACK, AUTHOR);
+
+        await sock.sendMessage(jid, { sticker: finalSticker }, { quoted: msg });
+
+        await sock.sendMessage(jid, { 
+            text: "*╻✅╹↵ تم السـرقـة 𝑺𝑼𝑲𝑼𝑵𝑨.⃝🫦*" 
+        }, { quoted: msg });
+
+    } catch (e) {
+        console.error('❌ خطأ في أمر الحقوق:', e);
+        await sock.sendMessage(msg.key.remoteJid, { 
+            text: "*⚠️ حدث خطأ أثناء السرقة!*" 
+        }, { quoted: msg });
+    }
+}
+
+export default { NovaUltra, execute };

@@ -1,0 +1,134 @@
+// plugins/منورين.js
+import { jidDecode } from "@whiskeysockets/baileys";
+
+// تخزين حالة الترحيب لكل مجموعة بشكل مستقل
+const welcomeSettings = new Map(); 
+const welcomedParticipants = new Set();
+
+export const NovaUltra = {
+    command: ["منورين"],
+    description: "تشغيل أو إيقاف الترحيب التلقائي بالأعضاء الجدد",
+    category: "الترحيب",
+    elite: "off",
+    group: true,
+    prv: false,
+    admin: true,
+    lock: "off",
+    nova: "on"
+};
+
+/**
+ * دالة الترحيب التي يتم استدعاؤها من main.js عند حدوث 'group-participants.update'
+ */
+export async function handleWelcome(sock, update) {
+    try {
+        const groupId = update.id;
+        
+        // طباعة للتأكد من وصول الحدث (للتجربة)
+        console.log(`🔔 حدث ترحيب في مجموعة: ${groupId}`);
+        console.log(`📊 نوع الحدث: ${update.action}`);
+        console.log(`👥 المشاركون: ${update.participants?.join(', ')}`);
+        
+        // التأكد أن الترحيب مفعل لهذه المجموعة وأن الإجراء هو إضافة عضو
+        const isActive = welcomeSettings.get(groupId);
+        console.log(`🎯 حالة الترحيب للمجموعة: ${isActive ? 'مفعل' : 'معطل'}`);
+        
+        if (!isActive || update.action !== 'add') return;
+
+        for (const participant of update.participants) {
+            if (welcomedParticipants.has(participant)) {
+                console.log(`⏭️ تم تخطي ${participant} (تم الترحيب به مسبقاً)`);
+                continue;
+            }
+
+            console.log(`🎉 جاري الترحيب بالعضو: ${participant}`);
+
+            try {
+                // جلب صورة العضو أو المجموعة
+                let ppUrl = null;
+                try {
+                    ppUrl = await sock.profilePictureUrl(participant, 'image');
+                } catch (e) {
+                    try {
+                        ppUrl = await sock.profilePictureUrl(groupId, 'image');
+                    } catch (err) {}
+                }
+
+                const welcomeMessage = `*_~『 A.N.A.S.T.A.S.I.A 』~_*\n\n` +
+                    `*_┊˹🍷↵˼┊ ارحب تراحيب المطر ↯_*\n\n` +
+                    `*_~.┊🌑┊ @${participant.split('@')[0]}.~_*\n\n` +
+                    `*_منور ياحب فل تعلم ان نور القروب هوا انت ╻🐧╹↵ ┊˹🍷˼┊_*\n\n` +
+                    `*_~╎╻🍷╹A.N.A.S.T.A.S.I.A ↵╎~_*`;
+
+                if (ppUrl) {
+                    await sock.sendMessage(groupId, {
+                        image: { url: ppUrl },
+                        caption: welcomeMessage,
+                        mentions: [participant]
+                    });
+                } else {
+                    await sock.sendMessage(groupId, {
+                        text: welcomeMessage,
+                        mentions: [participant]
+                    });
+                }
+
+                console.log(`✅ تم الترحيب بـ ${participant} بنجاح`);
+
+                // منع التكرار خلال دقيقة
+                welcomedParticipants.add(participant);
+                setTimeout(() => {
+                    welcomedParticipants.delete(participant);
+                    console.log(`🕐 تم إزالة ${participant} من قائمة منع التكرار`);
+                }, 60000);
+
+            } catch (err) {
+                console.error(`❌ خطأ في إرسال الترحيب لـ ${participant}:`, err);
+            }
+        }
+    } catch (err) {
+        console.error('❌ خطأ في دالة الترحيب:', err);
+    }
+}
+
+// تنفيذ الأمر (تشغيل/إيقاف)
+export async function execute({ sock, msg, args }) {
+    const chatId = msg.key.remoteJid;
+    const status = args[0];
+
+    console.log(`📝 تنفيذ أمر منورين في ${chatId} مع الحالة: ${status}`);
+
+    // التحقق من وجود كلمة تشغيل/ايقاف
+    if (status === 'off' || status === 'ايقاف') {
+        welcomeSettings.set(chatId, false);
+        await sock.sendMessage(chatId, { 
+            text: '*_~╻⛔╹↵ تم تعطيل الترحيب بالأعضاء الجدد.~_*' 
+        }, { quoted: msg });
+        
+        await sock.sendMessage(chatId, { 
+            react: { text: '✅', key: msg.key } 
+        });
+        
+        console.log(`🔴 تم تعطيل الترحيب في مجموعة ${chatId}`);
+        
+    } else if (status === 'on' || status === 'تشغيل' || !status) {
+        welcomeSettings.set(chatId, true);
+        await sock.sendMessage(chatId, { 
+            text: '*_~╻🍷╹↵ تم تفعيل الترحيب بالأعضاء الجدد بنجاح. ╻🔥╹↵~_*\n\n*_اكتب "منورين off" لتعطيله._*' 
+        }, { quoted: msg });
+        
+        await sock.sendMessage(chatId, { 
+            react: { text: '✅', key: msg.key } 
+        });
+        
+        console.log(`🟢 تم تفعيل الترحيب في مجموعة ${chatId}`);
+    } else {
+        // عرض الحالة الحالية
+        const currentState = welcomeSettings.get(chatId) ? '🟢 مفعل' : '🔴 معطل';
+        await sock.sendMessage(chatId, { 
+            text: `*حالة الترحيب:* ${currentState}\n\n*للتشغيل:* .منورين تشغيل\n*للايقاف:* .منورين ايقاف` 
+        }, { quoted: msg });
+    }
+}
+
+export default { NovaUltra, execute, handleWelcome };

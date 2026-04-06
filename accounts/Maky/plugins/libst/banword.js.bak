@@ -1,0 +1,89 @@
+import fs from 'fs';
+import path from 'path';
+
+// أرقام النخبة
+const ELITE = ['22230471912', '279693186056370', '2423066251286'];
+
+export const command = "حظر";
+
+export async function execute(sock, msg) {
+    const from = msg.key.remoteJid;
+    const sender = (msg.key.participant || from).split('@')[0];
+    
+    // التحقق من الصلاحية
+    if (!ELITE.includes(sender)) {
+        return sock.sendMessage(from, { 
+            text: "❌ هذا الأمر للنخبة فقط!" 
+        }, { quoted: msg });
+    }
+    
+    // قراءة النص
+    let text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+    let parts = text.trim().split(/\s+/);
+    let action = parts[1];
+    let word = parts.slice(2).join(' ');
+    
+    // ملف الكلمات
+    const file = path.join(process.cwd(), 'banned.json');
+    let banned = [];
+    
+    if (fs.existsSync(file)) {
+        banned = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } else {
+        fs.writeFileSync(file, JSON.stringify([]));
+    }
+    
+    // عرض القائمة
+    if (!action || action === 'list') {
+        if (banned.length === 0) {
+            return sock.sendMessage(from, { 
+                text: "📋 لا توجد كلمات محظورة" 
+            }, { quoted: msg });
+        }
+        let list = "📋 *الكلمات المحظورة*\n\n";
+        banned.forEach((w, i) => list += `${i+1}. ${w}\n`);
+        return sock.sendMessage(from, { text: list }, { quoted: msg });
+    }
+    
+    // إضافة كلمة
+    if (action === 'add' && word) {
+        if (banned.includes(word)) {
+            return sock.sendMessage(from, { 
+                text: `⚠️ "${word}" موجودة مسبقاً` 
+            }, { quoted: msg });
+        }
+        banned.push(word);
+        fs.writeFileSync(file, JSON.stringify(banned, null, 2));
+        return sock.sendMessage(from, { 
+            text: `✅ تم حظر: ${word}` 
+        }, { quoted: msg });
+    }
+    
+    // حذف كلمة
+    if ((action === 'del' || action === 'remove') && word) {
+        const index = banned.indexOf(word);
+        if (index === -1) {
+            return sock.sendMessage(from, { 
+                text: `⚠️ "${word}" غير موجودة` 
+            }, { quoted: msg });
+        }
+        banned.splice(index, 1);
+        fs.writeFileSync(file, JSON.stringify(banned, null, 2));
+        return sock.sendMessage(from, { 
+            text: `✅ تم إلغاء حظر: ${word}` 
+        }, { quoted: msg });
+    }
+    
+    // مسح الكل
+    if (action === 'clear') {
+        fs.writeFileSync(file, JSON.stringify([]));
+        return sock.sendMessage(from, { 
+            text: "🗑️ تم مسح جميع الكلمات" 
+        }, { quoted: msg });
+    }
+    
+    // مساعدة
+    return sock.sendMessage(from, { 
+        text: `📝 *أمر حظر الكلمات*\n\n.حظر add [كلمة] - إضافة\n.حظر del [كلمة] - حذف\n.حظر list - عرض\n.حظر clear - مسح الكل` 
+    }, { quoted: msg });
+}

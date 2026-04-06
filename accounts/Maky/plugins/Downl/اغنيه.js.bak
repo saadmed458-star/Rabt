@@ -1,0 +1,207 @@
+// plugins/التحميلات/اغنيه.js
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function sanitize(str) {
+    return str.replace(/[<>:"/\\|?*]+/g, '');
+}
+
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// دالة البحث في يوتيوب (أغاني فقط)
+async function searchYoutubeSong(query) {
+    try {
+        // إضافة كلمات مفتاحية للبحث عن أغاني فقط
+        const searchQuery = `${query} official audio song`;
+        const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}`;
+        const response = await axios.get(searchUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        
+        const html = response.data;
+        
+        // استخراج بيانات الفيديوهات
+        const videoMatches = [...html.matchAll(/"videoId":"([^"]+)".*?"title":{"runs":\[{"text":"([^"]+)"}/g)];
+        
+        for (const match of videoMatches) {
+            const videoId = match[1];
+            const title = match[2];
+            
+            // تصفية النتائج: نتأكد أنها أغنية (وليس مباراة أو فيلم)
+            const isSong = !title.match(/(مباراة|ملخص|أهداف|فيلم|مسلسل|حلقة|تتر|كأس|مونديال)/i);
+            
+            if (isSong && title.length > 3) {
+                return {
+                    videoId: videoId,
+                    url: `https://www.youtube.com/watch?v=${videoId}`,
+                    title: title
+                };
+            }
+        }
+        
+        // إذا لم نجد أغنية، نبحث بشكل أوسع
+        const fallbackMatch = html.match(/"videoId":"([^"]+)"/);
+        if (fallbackMatch) {
+            const videoId = fallbackMatch[1];
+            const titleMatch = html.match(/"title":{"runs":\[{"text":"([^"]+)"}/);
+            const title = titleMatch ? titleMatch[1] : query;
+            
+            return {
+                videoId: videoId,
+                url: `https://www.youtube.com/watch?v=${videoId}`,
+                title: title
+            };
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Search error:', error.message);
+        return null;
+    }
+}
+
+// دالة جلب رابط تحميل mp3 من عدة مصادر
+async function getMp3DownloadUrl(videoUrl) {
+    // قائمة APIs متعددة للتحميل
+    const apis = [
+        {
+            url: `https://api.cobalt.tools/api/json`,
+            method: 'POST',
+            body: { url: videoUrl, audioOnly: true, format: "mp3" }
+        },
+        {
+            url: `https://p.oceansaver.in/ajax/download.php?url=${encodeURIComponent(videoUrl)}&format=mp3`,
+            method: 'GET'
+        },
+        {
+            url: `https://youtube-mp3.download/api/convert?url=${encodeURIComponent(videoUrl)}`,
+            method: 'GET'
+        }
+    ];
+    
+    for (const api of apis) {
+        try {
+            let response;
+            if (api.method === 'POST') {
+                response = await axios.post(api.url, api.body, {
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: 10000
+                });
+            } else {
+                response = await axios.get(api.url, { timeout: 8000 });
+            }
+            
+            // استخراج رابط التحميل من الرد
+            if (response.data) {
+                if (response.data.url) return response.data.url;
+                if (response.data.downloadUrl) return response.data.downloadUrl;
+                if (response.data.link) return response.data.link;
+                if (response.data.download) return response.data.download;
+                
+                // لـ API cobalt
+                if (response.data.status === "success" && response.data.url) {
+                    return response.data.url;
+                }
+            }
+        } catch (err) {
+            continue;
+        }
+    }
+    
+    return null;
+}
+
+export const NovaUltra = {
+    command: "اغنيه",
+    description: "🔎 البحث وتحميل أغنية بصيغة mp3 من اليوتيوب",
+    category: "ميديا",
+    elite: "off",
+    group: true,
+    prv: true,
+    lock: "off"
+};
+
+async function execute({ sock, msg, args }) {
+    const chatId = msg.key.remoteJid;
+    const fullText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+    const query = fullText.replace(/^[^\s]+\s*/, '').trim();
+
+    if (!query) {
+        return await sock.sendMessage(chatId, {
+            text: `*╻🚨╹↵ يَجِبُ كِتَابَةُ اِسْمِ الأُغْنِيَةِ*\n\n*مثال:*\n.اغنيه ام كلثوم\n.اغنيه عبد الحليم\n.اغنيه الهوى الغلاب`
+        }, { quoted: msg });
+    }
+
+    try {
+        await sock.sendMessage(chatId, { react: { text: '🔍', key: msg.key } });
+        
+        // إرسال رسالة انتظار
+        const waitMsg = await sock.sendMessage(chatId, {
+            text: `*╻⏳╹↵ جاري البحث عن أغنية:*\n🎵 ${query}...`
+        }, { quoted: msg });
+        
+        // البحث في يوتيوب عن أغاني فقط
+        const video = await searchYoutubeSong(query);
+        
+        if (!video) {
+            await sock.sendMessage(chatId, {
+                edit: waitMsg.key,
+                text: `*╻⚠️╹↵ لَمْ يَتِمُّ الْعُثُورُ عَلَى أُغْنِيَة*\n\n*╻💡╹↵ جَرِّبْ اِسْمًا آخَرَ*\n\n*أمثلة:*\n🎵 .اغنيه ام كلثوم\n🎵 .اغنيه عبد الحليم\n🎵 .اغنيه فيروز`
+            });
+            await sock.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
+            return;
+        }
+        
+        await sock.sendMessage(chatId, {
+            edit: waitMsg.key,
+            text: `*╻✅╹↵ تم العثور على الأغنية:*\n🎵 ${video.title.substring(0, 60)}...\n\n*╻⏳╹↵ جاري تحميل الأغنية...*\n*╻💡╹↵ قد يستغرق التحميل بضع ثوانٍ.*`
+        });
+        
+        await sock.sendMessage(chatId, { react: { text: '⏳', key: msg.key } });
+        
+        // جلب رابط التحميل
+        const audioUrl = await getMp3DownloadUrl(video.url);
+        
+        if (!audioUrl) {
+            await sock.sendMessage(chatId, {
+                text: `*╻⚠️╹↵ تم العثور على الأغنية لكن فشل التحميل*\n\n*╻🎵╹↵ عنوان الأغنية:*\n${video.title}\n\n*╻🔗╹↵ رابط الفيديو:*\n${video.url}\n\n*╻💡╹↵ يمكنك تحميلها يدوياً من موقع convert2mp3.net*`
+            }, { quoted: msg });
+            await sock.sendMessage(chatId, { react: { text: '⚠️', key: msg.key } });
+            return;
+        }
+        
+        const cleanTitle = sanitize(video.title.substring(0, 50));
+        
+        // إرسال الأغنية
+        await sock.sendMessage(chatId, {
+            audio: { url: audioUrl },
+            mimetype: 'audio/mpeg',
+            fileName: `${cleanTitle}.mp3`,
+            ptt: false
+        }, { quoted: msg });
+        
+        await sock.sendMessage(chatId, { react: { text: '✅', key: msg.key } });
+        
+        // حذف رسالة الانتظار
+        await sock.sendMessage(chatId, { delete: waitMsg.key });
+
+    } catch (err) {
+        console.error('❌ خطأ في أمر اغنيه:', err);
+        await sock.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
+
+        return await sock.sendMessage(chatId, {
+            text: `*╻❌╹↵ حَدَثَ خَطَأ*\n*📛:* ${err.message}\n\n*╻💡╹↵ حاول مرة أخرى أو استخدم اسم أغنية مختلف.*`
+        }, { quoted: msg });
+    }
+}
+
+export default { NovaUltra, execute };

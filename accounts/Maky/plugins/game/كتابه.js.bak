@@ -1,0 +1,47 @@
+// سبام سبام سبام 
+// ملف: commands/spam.js
+
+const spamTracker = new Map(); // لتخزين عدد رسائل المستخدمين
+
+const SPAM_LIMIT = 5; // عدد الرسائل المسموح بها
+const SPAM_TIME = 5000; // خلال 5 ثواني (5 ثواني)
+
+async function spamDetection(client, message, userNumber, groupId) {
+    const now = Date.now();
+    const userKey = `${groupId}_${userNumber}`;
+    
+    if (!spamTracker.has(userKey)) {
+        spamTracker.set(userKey, [{ time: now, count: 1 }]);
+        return false;
+    }
+    
+    const userData = spamTracker.get(userKey);
+    const recentMessages = userData.filter(msg => now - msg.time < SPAM_TIME);
+    
+    if (recentMessages.length >= SPAM_LIMIT) {
+        // متجاوز حد السبام
+        await client.sendMessage(groupId, `⚠️ @${userNumber} تم اكتشاف سبام! تم طرد العضو.`, { mentions: [userNumber] });
+        
+        // طرد العضو من المجموعة
+        await client.groupParticipantsUpdate(groupId, [userNumber], "remove");
+        
+        // حذف رسائل السبام
+        const messages = await client.loadMessages(groupId, 20);
+        for (let msg of messages) {
+            if (msg.author === userNumber) {
+                await msg.delete(true);
+            }
+        }
+        
+        spamTracker.delete(userKey);
+        return true;
+    }
+    
+    // تحديث البيانات
+    userData.push({ time: now, count: recentMessages.length + 1 });
+    spamTracker.set(userKey, userData.filter(msg => now - msg.time < SPAM_TIME));
+    
+    return false;
+}
+
+module.exports = { spamDetection };

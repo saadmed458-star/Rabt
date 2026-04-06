@@ -1,0 +1,86 @@
+import { jidDecode } from "@whiskeysockets/baileys";
+import fs from "fs";
+
+const KickCommand = {
+  command: "طرد",
+  description: "طرد شخص من المجموعة مع استمارة وداع فخمة",
+  elite: "off",
+  lock: "on",
+  nova: "on"
+};
+
+async function execute({ sock, msg, args }) {
+  const chatId = msg.key.remoteJid;
+
+  if (!chatId.endsWith("@g.us")) {
+    return await sock.sendMessage(chatId, { text: "❌ هذا الأمر خاص بالمجموعات فقط." }, { quoted: msg });
+  }
+
+  // استخراج الرقم أو المنشن
+  const targetJid = msg.mentionedJid?.[0] || (args[0] ? args[0].replace(/\D/g,"") + "@s.whatsapp.net" : null);
+
+  if (!targetJid) {
+    return await sock.sendMessage(chatId, { text: "⚠️ يرجى منشن الشخص أو كتابة رقمه." }, { quoted: msg });
+  }
+
+  try {
+    // جلب بيانات العضو (صورة الملف الشخصي)
+    let profilePicBuffer = null;
+    try {
+      profilePicBuffer = await sock.profilePictureUrl(targetJid, "image");
+      if (profilePicBuffer) {
+        profilePicBuffer = Buffer.from(await fetch(profilePicBuffer).then(res => res.arrayBuffer()));
+      }
+    } catch (e) {
+      console.log("لا توجد صورة ملف شخصي للعضو:", targetJid);
+    }
+
+    // استمارة وداع فخمة
+    const farewellText = `
+*✧❖═══ •『🍻 وداع العضو』• ═══❖✧*
+
+*❍↵ الــــعــــضــــو :* @${targetJid.split("@")[0]}
+
+> ❒  *خلاص الرحلة خلصت، نتمناك التوفيق في عالم آخر...*  
+> 🖤 *مع السلامة يا صديق، كانت الإقامة قصيرة، لكنها محفورة*
+
+*✧❖═══ •『🛑 نهاية الرحلة』• ═══❖✧*
+`;
+
+    // إرسال الاستمارة مع صورة الملف الشخصي
+    if (profilePicBuffer) {
+      await sock.sendMessage(chatId, {
+        image: profilePicBuffer,
+        caption: farewellText,
+        mentions: [targetJid]
+      }, { quoted: msg });
+    } else {
+      await sock.sendMessage(chatId, {
+        text: farewellText,
+        mentions: [targetJid]
+      }, { quoted: msg });
+    }
+
+    // تأخير قبل الطرد
+    setTimeout(async () => {
+      try {
+        // تحقق أن العضو ليس مالك المجموعة
+        const groupMetadata = await sock.groupMetadata(chatId);
+        if (groupMetadata.owner === targetJid) {
+          return await sock.sendMessage(chatId, { text: "⚠️ لا يمكن طرد مالك المجموعة." }, { quoted: msg });
+        }
+
+        await sock.groupParticipantsUpdate(chatId, [targetJid], "remove");
+      } catch (err) {
+        console.error("Kick failed:", err);
+        await sock.sendMessage(chatId, { text: "❌ حدث خطأ أثناء محاولة الطرد." }, { quoted: msg });
+      }
+    }, 3000); // 3 ثواني
+
+  } catch (err) {
+    console.error("Kick Error:", err);
+    await sock.sendMessage(chatId, { text: "❌ حدث خطأ أثناء تنفيذ الأمر." }, { quoted: msg });
+  }
+}
+
+export default { KickCommand, execute };

@@ -1,0 +1,66 @@
+// plugins/النظام/غادر.js
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// قراءة رقم المالك من ملف config
+function getOwnerNumber() {
+    try {
+        const configPath = path.join(process.cwd(), 'nova', 'config.js');
+        const configContent = fs.readFileSync(configPath, 'utf8');
+        const match = configContent.match(/owner:\s*['"]([0-9]+)['"]/);
+        if (match) {
+            return match[1];
+        }
+    } catch (err) {
+        console.error("خطأ في قراءة رقم المالك:", err);
+    }
+    return "22230471912"; // الرقم الافتراضي
+}
+
+export const NovaUltra = {
+    command: "غادر",
+    description: "البوت يغادر المجموعة (للمالك فقط)",
+    elite: "off",
+    group: true,
+    prv: false,
+    lock: "off"
+};
+
+async function execute({ sock, msg, args }) {
+    const chatId = msg.key.remoteJid;
+    const sender = msg.key.participant || msg.key.remoteJid;
+    const senderNumber = sender.split('@')[0];
+    
+    // الحصول على رقم المالك من ملف config
+    const ownerNumber = getOwnerNumber();
+    
+    console.log(`🔍 التحقق: المرسل ${senderNumber} | المالك ${ownerNumber}`);
+    
+    // التحقق من أن المرسل هو المالك
+    if (senderNumber !== ownerNumber) {
+        return await sock.sendMessage(chatId, {
+            text: `*‏❖══════ •『🛡️』• ══════❖*\n\n*❍↵ هــذا الأمــر مــخــصــص لــلــمــالــك فــقــط.*\n\n*📌 رقــم الــمــالــك:* ${ownerNumber}\n*📌 رقــمــك:* ${senderNumber}`
+        }, { quoted: msg });
+    }
+    
+    // الحصول على سبب المغادرة (اختياري)
+    const reason = args.join(' ') || "لا يوجد سبب محدد";
+    
+    // إرسال رسالة الوداع قبل المغادرة
+    await sock.sendMessage(chatId, {
+        text: `*‏❖══════ •『🚪』• ══════❖*\n\n*❍↵ ســيــتــم مــغــادرة الــبــوت مــن الــمــجــمــوعــة*\n\n*❍↵ الــســبــب :* ${reason}\n\n*❍↵ وداعاً، كــان ســعــيــداً بــكــم 🌹*\n\n*‏❖══════ •『💐』• ══════❖*`
+    }, { quoted: msg });
+    
+    // انتظار ثانيتين قبل المغادرة
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // مغادرة المجموعة
+    const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+    await sock.groupParticipantsUpdate(chatId, [botJid], 'remove');
+}
+
+export default { NovaUltra, execute };

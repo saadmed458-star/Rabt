@@ -1,0 +1,156 @@
+import axios from "axios";
+import { jidDecode } from "@whiskeysockets/baileys";
+
+const NovaUltra = {
+    command: ["حديث", "نبوي", "حديث_نبوي"],
+    description: "أحاديث نبوية شريفة",
+    elite: "off",
+    group: true,
+    prv: true,
+    lock: "off",
+    admin: false
+};
+
+function decode(jid) {
+    return (jidDecode(jid)?.user || jid.split("@")[0]) + "@s.whatsapp.net";
+}
+
+// ========== أسماء الكتب ==========
+const bookNames = {
+    "bukhari": "📚 صحيح البخاري",
+    "muslim": "📚 صحيح مسلم",
+    "abudawud": "📚 سنن أبي داود",
+    "ibnmajah": "📚 سنن ابن ماجه",
+    "tirmidhi": "📚 جامع الترمذي",
+    "nasai": "📚 سنن النسائي",
+    "ahmad": "📚 مسند أحمد"
+};
+
+async function execute({ sock, msg, args }) {
+    const chatId = msg.key.remoteJid;
+    const sender = decode(msg.key.participant || chatId);
+    const senderNumber = sender.split('@')[0];
+
+    try {
+        // تفاعل بداية
+        await sock.sendMessage(chatId, {
+            react: { text: "📖", key: msg.key }
+        });
+
+        // إرسال رسالة "جاري البحث"
+        await sock.sendMessage(chatId, {
+            text: "⏳ *جاري جلب حديث نبوي شريف...*"
+        });
+
+        // جلب حديث عشوائي من API
+        const response = await axios.get('https://hadithapi.com/api/hadiths/random');
+        
+        if (!response.data || !response.data.hadith) {
+            throw new Error('لم يتم العثور على حديث');
+        }
+
+        const hadith = response.data.hadith;
+        
+        // تحديد اسم الكتاب
+        const bookName = bookNames[hadith.book_slug] || "📚 حديث شريف";
+        
+        // بناء نص الحديث
+        const hadithText = `*‏❖══════ •『📖』• ══════❖*
+
+*❍↵ حــــديــــث نــــبــــوي*
+
+*❃━═━═✦•〘•🕋•〙•✦═━═━❃*
+
+*╮──〔 الــــمــــتــــن 〕──╭*
+
+┊ ⌁ ${hadith.hadith}
+
+*❃━═━═✦•〘•📜•〙•✦═━═━❃*
+
+*╮──〔 الــــمــــصــــدر 〕──╭*
+
+┊ ⌁ ${bookName}
+┊ ⌁ رقم الحديث: ${hadith.hadith_number || "غير محدد"}
+┊ ⌁ الراوي: ${hadith.rawi || "غير محدد"}
+
+*‏❖══════ •『 🪻 』• ══════❖*
+
+> ⏤͟͟͞͞ 𝐊𝐑𝐎𝐋𝐋𝐎 - 𝑩𝛩𝑻 🕸⃝⃕
+
+👤 *الطلب من:* @${senderNumber}`;
+
+        // إرسال الحديث
+        await sock.sendMessage(chatId, {
+            text: hadithText,
+            mentions: [sender]
+        }, { quoted: msg });
+
+        // تفاعل نجاح
+        await sock.sendMessage(chatId, {
+            react: { text: "✅", key: msg.key }
+        });
+
+        console.log(`📖 حديث نبوي لـ @${senderNumber}`);
+
+    } catch (err) {
+        console.error("❌ خطأ في جلب الحديث:", err);
+        
+        // محاولة بديلة من API آخر
+        try {
+            const backupResponse = await axios.get('https://api.sunnah.com/v1/hadiths/random', {
+                headers: {
+                    'X-API-Key': 'SqD712P3E82xnwOAk4lyo9P2GmqhSNg23Gz5pP6d' // مفتاح تجريبي
+                }
+            });
+            
+            if (backupResponse.data && backupResponse.data.hadith) {
+                const hadith = backupResponse.data.hadith[0];
+                
+                const backupText = `*‏❖══════ •『📖』• ══════❖*
+
+*❍↵ حــــديــــث نــــبــــوي*
+
+*❃━═━═✦•〘•🕋•〙•✦═━═━❃*
+
+*╮──〔 الــــمــــتــــن 〕──╭*
+
+┊ ⌁ ${hadith.body}
+
+*❃━═━═✦•〘•📜•〙•✦═━═━❃*
+
+*╮──〔 الــــمــــصــــدر 〕──╭*
+
+┊ ⌁ ${hadith.book ? hadith.book.name : "حديث شريف"}
+
+*‏❖══════ •『 🪻 』• ══════❖*
+
+> ⏤͟͟͞͞ 𝐊𝐑𝐎𝐋𝐋𝐎 - 𝑩𝛩𝑻 🕸⃝⃕
+
+👤 *الطلب من:* @${senderNumber}`;
+
+                await sock.sendMessage(chatId, {
+                    text: backupText,
+                    mentions: [sender]
+                }, { quoted: msg });
+
+                await sock.sendMessage(chatId, {
+                    react: { text: "✅", key: msg.key }
+                });
+
+                return;
+            }
+        } catch (backupErr) {
+            console.error("❌ فشل API البديل:", backupErr);
+        }
+
+        await sock.sendMessage(chatId, { 
+            text: "❌ حدث خطأ في جلب الحديث، حاول مرة أخرى لاحقاً" 
+        });
+        
+        await sock.sendMessage(chatId, {
+            react: { text: "❌", key: msg.key }
+        });
+    }
+}
+
+export default { NovaUltra, execute };

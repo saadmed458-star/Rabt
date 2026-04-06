@@ -1,0 +1,60 @@
+import fs from 'fs';
+import path from 'path';
+import { isElite } from '../haykala/elite.js'; // تأكد أن المسار صحيح
+
+const dataDir = path.join(new URL('.', import.meta.url).pathname, '..', 'data');
+const filePath = path.join(dataDir, 'bannedWords.json');
+
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, JSON.stringify([]));
+
+export const NovaUltra = {
+    command: "حظر",
+    description: "يضيف كلمة إلى قائمة الكلمات المحظورة.",
+    usage: ".حظر [الكلمة]",
+    group: true,
+    prv: true
+};
+
+export async function execute({ sock, msg }) {
+    try {
+        const chatId = msg.key.remoteJid;
+        const sender = msg.key.participant || chatId;
+
+        if (!(await isElite(sender))) {
+            return await sock.sendMessage(chatId, {
+                text: "❌ هذا الأمر مخصص للنخبة فقط!"
+            }, { quoted: msg });
+        }
+
+        const body = msg.message?.extendedTextMessage?.text || msg.message?.conversation || '';
+        const wordToBan = body.replace('.حظر', '').trim();
+
+        if (!wordToBan) {
+            return await sock.sendMessage(chatId, {
+                text: "❌ يجب أن تكتب الكلمة التي تريد حظرها!"
+            }, { quoted: msg });
+        }
+
+        let bannedWords = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
+        if (bannedWords.includes(wordToBan)) {
+            return await sock.sendMessage(chatId, {
+                text: `⚠️ الكلمة "${wordToBan}" محظورة بالفعل!`
+            }, { quoted: msg });
+        }
+
+        bannedWords.push(wordToBan);
+        fs.writeFileSync(filePath, JSON.stringify(bannedWords, null, 2), 'utf8');
+
+        await sock.sendMessage(chatId, {
+            text: `✅ تمت إضافة "${wordToBan}" إلى قائمة الكلمات المحظورة.`
+        }, { quoted: msg });
+
+    } catch (error) {
+        console.error('✗ خطأ في أمر الحظر:', error);
+        await sock.sendMessage(msg.key.remoteJid, {
+            text: `❌ حدث خطأ أثناء تنفيذ الأمر:\n\n${error.message || error.toString()}`
+        }, { quoted: msg });
+    }
+}

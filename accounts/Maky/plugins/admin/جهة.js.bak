@@ -1,0 +1,108 @@
+// plugins/النظام/اضافة.js
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ملف حفظ السجل
+const logFile = path.join(__dirname, "../nova/data/add_log.json");
+
+const dataDir = path.join(__dirname, "../nova/data");
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+if (!fs.existsSync(logFile)) fs.writeFileSync(logFile, JSON.stringify({ added: [], lastAdd: 0 }));
+
+function loadLog() {
+    try {
+        return JSON.parse(fs.readFileSync(logFile, 'utf8'));
+    } catch {
+        return { added: [], lastAdd: 0 };
+    }
+}
+
+function saveLog(data) {
+    fs.writeFileSync(logFile, JSON.stringify(data, null, 2), 'utf8');
+}
+
+function cleanNumber(number) {
+    let clean = number.trim();
+    clean = clean.replace(/^\*\s*/, '');
+    clean = clean.replace(/[^\d+]/g, '');
+    if (!clean.startsWith('+') && /^\d+$/.test(clean)) {
+        clean = '+' + clean;
+    }
+    return clean;
+}
+
+export const NovaUltra = {
+    command: "اضافة",
+    description: "إضافة رقم واحد إلى المجموعة",
+    elite: "on",
+    group: true,
+    prv: false,
+    lock: "off"
+};
+
+async function execute({ sock, msg, args }) {
+    const chatId = msg.key.remoteJid;
+    
+    // التحقق من وجود رقم
+    if (args.length === 0) {
+        return await sock.sendMessage(chatId, {
+            text: `*‏❖══════ •『📇』• ══════❖*\n\n*❍↵ طــريــقــة الاســتــخــدام:*\n\n*▸ .اضافة [الرقم]*\n\n*مثال:*\n\`.اضافة +20 10 12345678\`\n\n*⚠️ يــضــاف رقــم واحــد فــقــط*\n\n*‏❖══════ •『💐』• ══════❖*`
+        }, { quoted: msg });
+    }
+    
+    // تنظيف الرقم
+    let number = args.join(" ");
+    number = cleanNumber(number);
+    
+    if (!number || number.length < 8) {
+        return await sock.sendMessage(chatId, {
+            text: `*‏❖══════ •『⚠️』• ══════❖*\n\n*❍↵ الــرقــم غــيــر صــالــح*\n*❍↵ تــأكــد مــن صــيــغــة الــرقــم*\n\n*مثال:* +20 10 12345678\n\n*‏❖══════ •『💐』• ══════❖*`
+        }, { quoted: msg });
+    }
+    
+    await sock.sendMessage(chatId, {
+        react: { text: '⏳', key: msg.key }
+    });
+    
+    // إضافة الرقم
+    try {
+        const jid = number.includes('@') ? number : number + '@s.whatsapp.net';
+        
+        // محاولة إضافة العضو
+        await sock.groupParticipantsUpdate(chatId, [jid], 'add');
+        
+        await sock.sendMessage(chatId, {
+            text: `*‏❖══════ •『✅』• ══════❖*\n\n*❍↵ تــم إضــافــة الــرقــم*\n\n*▸ ${number}*\n\n*‏❖══════ •『💐』• ══════❖*`
+        }, { quoted: msg });
+        
+        await sock.sendMessage(chatId, {
+            react: { text: '✅', key: msg.key }
+        });
+        
+    } catch (err) {
+        console.error("❌ فشل الإضافة:", err);
+        
+        let errorMsg = `*‏❖══════ •『❌』• ══════❖*\n\n*❍↵ فــشــل إضــافــة الــرقــم*\n\n*▸ ${number}*\n\n`;
+        
+        if (err.message.includes("not-authorized")) {
+            errorMsg += `*⚠️ لــيــس لــديــك صــلاحــيــة الإضــافــة*\n`;
+        } else if (err.message.includes("exist")) {
+            errorMsg += `*⚠️ الــرقــم مــوجــود بــالــفــعــل فــي الــمــجــمــوعــة*\n`;
+        } else if (err.message.includes("invalid")) {
+            errorMsg += `*⚠️ الــرقــم غــيــر صــالــح*\n`;
+        } else {
+            errorMsg += `*⚠️ الــرقــم لــيــس لــه حــســاب واتــســاب*\n`;
+        }
+        
+        errorMsg += `\n*‏❖══════ •『💐』• ══════❖*`;
+        
+        await sock.sendMessage(chatId, { text: errorMsg }, { quoted: msg });
+        await sock.sendMessage(chatId, { react: { text: '❌', key: msg.key } });
+    }
+}
+
+export default { NovaUltra, execute };

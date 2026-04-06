@@ -1,0 +1,76 @@
+// plugins/المجموعات/خاين.js
+
+export const NovaUltra = {
+    command: "خاين",
+    description: "طرد الخونة من المجموعة",
+    category: "الادارة",
+    elite: "off",
+    group: true,
+    prv: false,
+    lock: "off",
+    admin: true
+};
+
+async function execute({ sock, msg, args }) {
+    const chatId = msg.key.remoteJid;
+    
+    // الحصول على الشخص الممنشن
+    const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    
+    if (!mentionedJid) {
+        return await sock.sendMessage(chatId, {
+            text: `🫦 يرجى منشن الخاين الذي تريد طرده\nمثال: .خاين @الخاين`
+        }, { quoted: msg });
+    }
+    
+    const targetNumber = mentionedJid.split('@')[0];
+    const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+    
+    // منع طرد البوت نفسه
+    if (mentionedJid === botJid) {
+        return await sock.sendMessage(chatId, {
+            text: `🫦 لا يمكنك طرد البوت نفسه يا خاين!`
+        }, { quoted: msg });
+    }
+    
+    // رسالة الخيانة
+    const traitorMessage = `╻شوف ماتوقت انك تخونا بهالفعل انت ضيعت تعب كتير كتير عملته لنفسك وضيعت ثقتنه وضيعتو بنفسك انت جبت العيد لنفسك ومع مملكة هايكوريا الخائئنن تحت حذائنا نقبل فقط المشرفين لي مايخون متل سافل متلك @${targetNumber} جاري طرد الخاين من المملكة...╻🫦.╹↵`;
+    
+    // إرسال رسالة الخيانة
+    await sock.sendMessage(chatId, {
+        text: traitorMessage,
+        mentions: [mentionedJid]
+    }, { quoted: msg });
+    
+    // تفاعل
+    await sock.sendMessage(chatId, {
+        react: { text: '🫦', key: msg.key }
+    });
+    
+    // انتظار 1.5 ثانية ثم الطرد
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    // طرد الخاين
+    try {
+        await sock.groupParticipantsUpdate(chatId, [mentionedJid], 'remove');
+        
+        // رسالة تأكيد الطرد
+        await sock.sendMessage(chatId, {
+            text: `🫦 تـم طـرد الـخـائـن @${targetNumber}\n🫦 الـخـونـة مـا لـهـم مـكـان\n🫦 عاش من وفى وأمانة`,
+            mentions: [mentionedJid]
+        });
+        
+        await sock.sendMessage(chatId, {
+            react: { text: '🫦', key: msg.key }
+        });
+        
+    } catch (err) {
+        console.error("❌ فشل الطرد:", err);
+        await sock.sendMessage(chatId, {
+            text: `🫦 فـشـل طـرد الـخـائـن @${targetNumber}\n🫦 تـأكـد أن الـبـوت مـشـرف`,
+            mentions: [mentionedJid]
+        }, { quoted: msg });
+    }
+}
+
+export default { NovaUltra, execute };

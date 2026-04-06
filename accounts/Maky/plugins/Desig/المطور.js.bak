@@ -1,0 +1,87 @@
+import fs from "fs";
+
+const DeveloperContact = {
+  command: "المطور",
+  description: "عرض جهة اتصال المطور",
+  elite: "off",
+  lock: "off",
+  nova: "on"
+};
+
+async function execute({ sock, msg }) {
+  const chatId = msg.key.remoteJid;
+  
+  const devNumber = "22230471912";
+  const devName = "⏤͟͟͞͞ 𝐊𝐑𝐎𝐋𝐋𝐎 🕸⃝⃕";
+  const audioPath = "/storage/emulated/0/.bot/bot/accounts/Maky/nova/welcome.mp3";
+
+  try {
+    // طباعة معلومات للتأكد
+    console.log("محاولة إرسال جهة اتصال...");
+    
+    // إرسال جهة اتصال
+    const vcard = `BEGIN:VCARD
+VERSION:3.0
+FN:${devName}
+TEL;waid=${devNumber}:+${devNumber}
+END:VCARD`;
+
+    await sock.sendMessage(chatId, {
+      contacts: {
+        displayName: devName,
+        contacts: [{ vcard }]
+      }
+    }, { quoted: msg });
+    
+    console.log("تم إرسال جهة الاتصال");
+    
+    // التحقق من وجود الصوت
+    console.log("التحقق من الصوت في:", audioPath);
+    
+    if (fs.existsSync(audioPath)) {
+      console.log("✅ الملف موجود");
+      
+      const stats = fs.statSync(audioPath);
+      console.log("حجم الملف:", stats.size, "بايت");
+      
+      if (stats.size > 0) {
+        const audioBuffer = fs.readFileSync(audioPath);
+        console.log("✅ تم قراءة الملف، حجم:", audioBuffer.length);
+        
+        console.log("جاري إرسال الصوت...");
+        await sock.sendMessage(chatId, {
+          audio: audioBuffer,
+          mimetype: 'audio/mpeg',
+          ptt: true
+        });
+        console.log("✅ تم إرسال الصوت بنجاح");
+      } else {
+        console.log("❌ الملف فارغ");
+        await sock.sendMessage(chatId, { text: "❌ ملف الصوت فارغ" });
+      }
+    } else {
+      console.log("❌ الملف غير موجود");
+      await sock.sendMessage(chatId, { text: "❌ ملف الصوت غير موجود" });
+    }
+    
+  } catch (err) {
+    console.error("❌ خطأ:", err.message);
+    console.error(err);
+    
+    // إرسال جهة اتصال فقط
+    const vcardSimple = `BEGIN:VCARD
+VERSION:3.0
+FN:${devName}
+TEL;waid=${devNumber}:+${devNumber}
+END:VCARD`;
+    
+    await sock.sendMessage(chatId, {
+      contacts: {
+        displayName: devName,
+        contacts: [{ vcard: vcardSimple }]
+      }
+    });
+  }
+}
+
+export default { DeveloperContact, execute };
