@@ -25,4 +25,4 @@ COPY . .
 EXPOSE 3000
 
 # أمر التشغيل
-CMD ["node", "Main.js"]
+CMD ["node", "main.js"]
